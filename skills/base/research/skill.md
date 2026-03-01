@@ -74,23 +74,16 @@ config:
       - low
     default: medium
     description: Minimum confidence level required before accepting a finding.
-  - key: safeSearch
-    label: Safe Search
-    type: select
-    options:
-      - strict
-      - moderate
-      - off
-    default: moderate
-    description: Safe-search filtering level passed to the duck-duck-search tool.
-  - key: maxSearchResults
-    label: Max Search Results
-    type: number
-    default: 10
-    min: 1
-    max: 50
-    step: 1
-    description: Maximum results to request from duck-duck-search per query.
+  - key: language
+    label: Wikipedia Language
+    type: string
+    default: en
+    description: Two-letter language code for the Wikipedia edition to search (e.g. en, fr, de).
+  - key: includeSummary
+    label: Include Top-Result Summary
+    type: boolean
+    default: true
+    description: Fetch a plain-text extract for the highest-ranked Wikipedia result.
 ---
 
 # Research
@@ -103,7 +96,7 @@ When you need information that is not already in context, conduct structured res
 
 2. **Choose sources.** Decide where to look:
    - **Local files** — Use `filesystem` to read project files, configs, READMEs.
-   - **Web search** — Use `duck-duck-search` to find documentation, Stack Overflow answers, or articles.
+   - **Web search** — Use `wiki-search` to find encyclopaedic articles, background information, and definitions.
    - **HTTP fetch** — Use `http` to retrieve specific URLs (docs pages, APIs, raw files).
    - **Project inspection** — Use `project-inspector` to understand a codebase's structure.
 
