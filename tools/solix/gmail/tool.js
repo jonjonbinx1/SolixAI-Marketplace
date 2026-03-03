@@ -582,15 +582,34 @@ import { spawnSync } from 'node:child_process';
   // opens the URL in their browser, then runs get_refresh_token.js separately.
   async configAction(key, context) {
     console.log('[gmail:configAction] called, key=', key);
+    // Dump the context shape so we can identify the correct property path.
+    try {
+      console.log('[gmail:configAction] context keys:', context ? Object.keys(context) : 'null/undefined');
+      console.log('[gmail:configAction] context.config keys:', context?.config ? Object.keys(context.config) : 'n/a');
+      console.log('[gmail:configAction] context raw (truncated):', JSON.stringify(context)?.slice(0, 400));
+    } catch (e) { /* ignore serialization errors */ }
+
     if (key !== 'refreshCredentials') {
       throw new Error(`unknown config action "${key}"`);
     }
 
-    const cfg = context?.config ?? {};
-    const clientId = cfg.clientId;
-    const clientSecret = cfg.clientSecret;
-    const port = cfg.oauthCallbackPort ?? 3000;
-    const scopes = cfg.scopes ??
+    // Try every shape the runtime might use to pass config values.
+    // shape A: context.config.clientId  (same as run())
+    // shape B: context.clientId         (flat on context)
+    // shape C: context.settings.clientId
+    // shape D: context.toolConfig.clientId
+    const cfgA = context?.config ?? {};
+    const cfgB = context ?? {};
+    const cfgC = context?.settings ?? {};
+    const cfgD = context?.toolConfig ?? {};
+    const clientId =
+      cfgA.clientId ?? cfgB.clientId ?? cfgC.clientId ?? cfgD.clientId ?? null;
+    const clientSecret =
+      cfgA.clientSecret ?? cfgB.clientSecret ?? cfgC.clientSecret ?? cfgD.clientSecret ?? null;
+    const port =
+      cfgA.oauthCallbackPort ?? cfgB.oauthCallbackPort ?? 3000;
+    const scopes =
+      cfgA.scopes ?? cfgB.scopes ??
       'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send';
 
     console.log('[gmail:configAction] clientId present?', !!clientId, 'clientSecret present?', !!clientSecret);
