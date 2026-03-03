@@ -20,6 +20,8 @@
 
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const TOKEN_URL  = "https://oauth2.googleapis.com/token";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 /** Exchange a refresh token for a fresh access token. */
 async function getAccessToken({ clientId, clientSecret, refreshToken }) {
@@ -212,6 +214,18 @@ export default {
       description:
         "Gmail label used to tag messages stored as reusable templates. " +
         "The label will be created automatically if it does not exist.",
+    },
+    {
+      key: "refreshCredentials",
+      label: "Refresh credentials",
+      type: "action",
+      actionLabel: "Re-authenticate",
+      actionConfirmText:
+        "This will open a browser window to complete OAuth and return a refresh token. Continue?",
+      actionCode: `// Runs the local helper to perform an OAuth consent flow and return a refresh token.
+import { spawnSync } from 'node:child_process';
+// The runtime will execute the tool's configAction when the user confirms.
+`,
     },
     {
       key: "trashOnDelete",
@@ -561,6 +575,53 @@ export default {
       }
     } catch (err) {
       return { ok: false, error: err.message };
+    }
+  },
+  // Called by the runtime when a user confirms a config action button in the UI.
+  async configAction(key) {
+    if (key !== "refreshCredentials") {
+      throw new Error(`unknown action ${key}`);
+    }
+
+    try {
+      const helperPath = fileURLToPath(new URL("./get_refresh_token.js", import.meta.url));
+      // Run the helper script in a child Node process. It will open the browser and print tokens to stdout.
+      const proc = spawnSync(process.execPath, [helperPath], { stdio: ['inherit', 'pipe', 'pipe'] });
+      if (proc.error) throw proc.error;
+      const out = (proc.stdout || Buffer.from('')).toString();
+      // Try to parse a printed 'Refresh token:' line or a JSON blob with refresh_token
+      let token = null;
+      const m = out.match(/Refresh token:\s*([A-Za-z0-9_\-\/\.]+)/i);
+      if (m) token = m[1].trim();
+      if (!token) {
+        const jsonMatch = out.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            token = parsed.refresh_token ?? parsed.refreshToken ?? null;
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+
+      if (!token) {
+        return {
+          ok: false,
+          message:
+            "No refresh token found in helper output. Run 'node tools/solix/gmail/get_refresh_token.js' manually and copy the refresh token into the tool config.",
+          output: out,
+        };
+      }
+
+      // Return a short success message. The runtime/ UI should persist the token into the tool settings.
+      return {
+        ok: true,
+        message: `Refresh token obtained: ${token.slice(0, 8)}… — copy this value into the tool config 'refreshToken' secret field.`,
+        refreshTokenPreview: token.slice(0, 12) + '…',
+      };
+    } catch (err) {
+      return { ok: false, error: err?.message ?? String(err) };
     }
   },
 };
