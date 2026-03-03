@@ -651,13 +651,15 @@ import { spawnSync } from 'node:child_process';
     const authUrl = url.toString();
 
     console.log('[gmail:configAction] returning authUrl immediately (no server started)');
+    console.log('[gmail:configAction] authUrl:', authUrl);
     return {
       ok: true,
       authUrl,
       message:
-        'Open the authUrl in your browser, complete sign-in, then run:\n' +
-        `  node ".solix/tools/solix/gmail/get_refresh_token.js"\n` +
-        'and paste the printed refresh token into the tool config.',
+        `Open this URL in your browser to complete Gmail sign-in:\n\n${authUrl}\n\n` +
+        'After completing sign-in, run the helper to get your refresh token:\n' +
+        `  node "${join(homedir(), '.solix', 'tools', 'solix', 'gmail', 'get_refresh_token.js')}"\n\n` +
+        "Then paste the printed refresh token into the tool config 'OAuth 2.0 Refresh Token' field.",
     };
   },
 };
