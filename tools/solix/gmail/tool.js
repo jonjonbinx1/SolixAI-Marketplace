@@ -682,6 +682,8 @@ import { spawnSync } from 'node:child_process';
       };
 
       server.once('listening', () => {
+      console.log('[gmail] configAction called for key=', key);
+      console.log('[gmail] config preview (clientId set?):', !!clientId, 'port=', port);
         finish({ ok: true, authUrl: urlStr, message: 'Open this URL in your browser to complete Gmail consent.' });
       });
 
@@ -692,6 +694,7 @@ import { spawnSync } from 'node:child_process';
       });
 
       // Safety timeout: if listen neither succeeds nor errors within 5s, return
+      console.log('[gmail] starting oauth helper server (non-blocking)');
       // the URL so the UI can proceed instead of hanging.
       const timeout = setTimeout(() => {
         finish({ ok: false, error: 'listen_timeout', authUrl: urlStr, message: 'Timed out while binding callback port; open the URL manually.' });
@@ -705,6 +708,7 @@ import { spawnSync } from 'node:child_process';
     // helper to import inside Promise (top-level await not available everywhere)
     function awaitImport(mod) {
       return new Promise((res, rej) => {
+            console.log('[gmail] oauth callback parameters, code?', !!code, 'error?', !!error);
         try {
           res(require(mod));
         } catch (e) {
@@ -727,6 +731,7 @@ export const spec = {
   version: "1.0.0",
   inputSchema: {
     type: "object",
+              console.log('[gmail] exchanging code for tokens');
     required: ["action"],
     properties: {
       action: {
@@ -739,6 +744,7 @@ export const spec = {
           "replyMessage",
           "createDraft",
           "listLabels",
+              console.log('[gmail] token endpoint responded, status=', tokenRes.status);
           "createLabel",
           "addLabel",
           "removeLabel",
