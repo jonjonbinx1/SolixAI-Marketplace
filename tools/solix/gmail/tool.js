@@ -774,3 +774,9 @@ export async function configAction(key, ...args) {
   }
   throw new Error("configAction not implemented on gmail tool");
 }
+
+// Compatibility helper: some runtimes call `getTool()` to retrieve the tool
+// implementation. Export it here so those callers don't fail.
+export function getTool() {
+  return toolImpl;
+}
