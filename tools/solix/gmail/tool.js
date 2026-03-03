@@ -262,18 +262,6 @@ import { spawnSync } from 'node:child_process';
           "Gmail tool is not configured. " +
           "Set clientId, clientSecret, and refreshToken in the tool settings.",
        };
-
-      export default toolImpl;
-
-      // Backwards/alternate compatibility: export a named function that some runtimes
-      // invoke directly when performing config actions. Delegate to the tool's
-      // `configAction` method if present.
-      export async function configAction(key, ...args) {
-        if (typeof toolImpl.configAction === "function") {
-          return toolImpl.configAction(key, ...args);
-        }
-        throw new Error("configAction not implemented on gmail tool");
-      }
     }
 
     let accessToken;
@@ -774,3 +762,15 @@ export const spec = {
 
   verify: ["gmail.listLabels"],
 };
+
+export default toolImpl;
+
+// Backwards/alternate compatibility: export a named function that some runtimes
+// invoke directly when performing config actions. Delegate to the tool's
+// `configAction` method if present.
+export async function configAction(key, ...args) {
+  if (typeof toolImpl.configAction === "function") {
+    return toolImpl.configAction(key, ...args);
+  }
+  throw new Error("configAction not implemented on gmail tool");
+}
