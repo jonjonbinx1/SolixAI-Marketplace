@@ -792,10 +792,9 @@ import { shell } from 'electron';
       if (scopes) helperArgs.push('--scopes', scopes);
 
       helperChild = spawn(nodeExe, helperArgs, {
-          // pipe stdout/stderr so we can read the READY signal;
-          // do NOT detach yet — we need to keep reading stdout
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
+          detached: true,  // Allow helper to live independently when parent exits
         });
 
         helperChild.stdout.setEncoding('utf8');
@@ -826,6 +825,11 @@ import { shell } from 'electron';
           clearTimeout(timer);
           resolve(false);
         });
+
+        // Detach the child process so it doesn't keep the parent alive and won't be
+        // terminated when the parent process exits. This allows the OAuth flow to
+        // complete independently of the toolActionRunner subprocess lifecycle.
+        helperChild.unref();
       } catch (e) {
         console.error('[gmail:configAction] failed to launch helper', e);
         clearTimeout(timer);
