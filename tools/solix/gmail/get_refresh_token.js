@@ -230,9 +230,3 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
-
-// Try to listen on both IPv6 and IPv4 loopback addresses so browsers
-  // using either family can reach the callback. Some platforms default to
-  // IPv6-only sockets which won't accept IPv4 connections, so attempting
-  // both increases reliability.
-  const actualPort = port;
