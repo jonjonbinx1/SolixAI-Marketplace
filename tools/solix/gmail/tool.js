@@ -682,7 +682,7 @@ import { shell } from 'electron';
     // Build consent URL that the user will need to visit.
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', clientId);
-    url.searchParams.set('redirect_uri', `https://oauth2.googleapis.com/token`);
+    url.searchParams.set('redirect_uri', `http://localhost:${port}/oauth2callback`);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', scopes);
     url.searchParams.set('access_type', 'offline');
@@ -803,11 +803,12 @@ import { shell } from 'electron';
           // Forward helper output so it appears in the host logs.
           process.stdout.write('[helper] ' + chunk);
           if (!helperReady) {
-            const m = chunk.match(/READY\s+(https?:\/\/localhost:(\d+)\/oauth2callback)/);
+            const m = chunk.match(/READY\s+(https?:\/\/[^\s]+)/);
             if (m) {
+              // Helper may report a local callback URL or a Google OAuth URL
+              // Either way, we use the original authUrl that was built at startup
               helperReady = true;
               clearTimeout(timer);
-              // Do not overwrite authUrl; retain the original Google OAuth URL
               resolve(true);
             } else if (/READY/.test(chunk)) {
               helperReady = true;
