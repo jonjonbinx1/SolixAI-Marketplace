@@ -722,20 +722,11 @@ import { shell } from 'electron';
     }
 
     async function tryOpenUrl(url) {
-      // attempt to use a redirect page first
+      // always use redirect page to avoid quoting issues
       const redirect = writeRedirectPage(url);
       const toOpen = redirect || url;
 
-      // try the open npm package first; it handles quoting on all platforms
-      try {
-        const openPkg = await import('open');
-        await openPkg.default(toOpen);
-        return 'open';
-      } catch (e) {
-        // ignore and fall back
-      }
-
-      // attempt electron next
+      // attempt electron first if available
       try {
         const sh = require('electron').shell;
         if (sh && typeof sh.openExternal === 'function') {
@@ -744,17 +735,17 @@ import { shell } from 'electron';
         }
       } catch { /* electron not available */ }
 
-      // fallback to system-specific command
+      // fallback to manual system command
       if (process.platform === 'win32') {
-        // on Windows 'start' is a shell builtin; need explicit cmd invocation
-        const quoted = `"${toOpen.replace(/"/g, '\\"')}"`;
-        console.log('[gmail:configAction] spawning cmd start with', quoted);
+        // Explorer handles both file paths and URLs reliably and avoids the
+        // quirks of `start` (which has been stripping a trailing backslash).
+        console.log('[gmail:configAction] spawning explorer with', toOpen);
         try {
-          const cp = spawn('cmd', ['/c', 'start', '""', quoted], { detached: true, stdio: 'ignore' });
+          const cp = spawn('explorer', [toOpen], { detached: true, stdio: 'ignore' });
           cp.unref();
           return 'cmd';
         } catch (err) {
-          console.warn('[gmail:configAction] fallback start command failed', err);
+          console.warn('[gmail:configAction] fallback explorer command failed', err);
           return null;
         }
       }
@@ -802,13 +793,10 @@ import { shell } from 'electron';
 
     const worked = opener !== null;
     const baseMessage = worked
-      ? 'Browser should open automatically; helper has been started.'
+      ? 'Browser should open automatically; helper has been started. Caller may also open the provided authUrl.'
       : 'Helper started in background; open the consent URL below if it does not open automatically.';
-    const result = { ok: true, message: baseMessage, openedBy: opener, helperPath };
-    if (!worked) {
-      // only include authUrl when we weren't able to open it ourselves
-      result.authUrl = authUrl;
-    }
+    // always return the authUrl so the front-end can choose to open it itself
+    const result = { ok: true, message: baseMessage, openedBy: opener, helperPath, authUrl };
     return result;
   },
 };
