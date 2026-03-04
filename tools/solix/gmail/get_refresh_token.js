@@ -234,18 +234,13 @@ async function main() {
     return s;
   }
 
-  // Use localhost for maximum compatibility across platforms and firewalls
-  const bindHost = 'localhost';
-  console.log(`[gmail:get_refresh_token] attempting to bind on ${bindHost}:${port}...`);
-  makeServer(bindHost);
 
-  // Fallback: if localhost fails, try 127.0.0.1 after 500ms
-  const fallbackTimer = setTimeout(() => {
-    if (servers.length === 0) {
-      console.error(`[gmail:get_refresh_token] ${bindHost} binding failed; trying 127.0.0.1...`);
-      makeServer('127.0.0.1');
-    }
-  }, 500);
+  // Always bind to both 'localhost' (may resolve to ::1/IPv6) and '127.0.0.1' (IPv4) for maximum compatibility
+  const bindHosts = ['localhost', '127.0.0.1'];
+  for (const host of bindHosts) {
+    console.log(`[gmail:get_refresh_token] attempting to bind on ${host}:${port}...`);
+    makeServer(host);
+  }
 
   // Prevent exit until callback is received
   process.on('SIGINT', () => {
