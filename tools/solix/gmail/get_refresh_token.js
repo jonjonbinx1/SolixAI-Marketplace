@@ -100,7 +100,8 @@ async function main() {
   const existingCode = getArg('code');
   const portInput = getArg('port');
   const port = parseInt(portInput ?? '3000', 10);
-  const redirectUri = `http://localhost:${port}/oauth2callback`;
+  // Use 127.0.0.1 explicitly for redirect_uri and server
+  const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
 
   const scopes = getArg('scopes') ?? solixCfg.scopes ??
     'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send';
@@ -178,37 +179,7 @@ async function main() {
     rl.close();
   }
 
-  // Try to listen on both IPv6 and IPv4 loopback addresses so browsers
-  // using either family can reach the callback. Some platforms default to
-  // IPv6-only sockets which won't accept IPv4 connections, so attempting
-  // both increases reliability.
-  const servers = [];
-
-  // track the port we actually bound to (may differ when port 0 is used)
-  let actualPort = port;
-
-  // Emitted once — signals parent process (tool.js) that the server is ready
-  // so the parent can open the browser at exactly the right moment.  Include
-  // the full redirect URI, allowing the parent to adjust if a different port
-  // was selected due to conflicts.
-  let readyEmitted = false;
-  function onFirstListen() {
-    if (readyEmitted) return;
-    readyEmitted = true;
-    console.log(`[DEBUG] onFirstListen called, emitting READY with authUrl: ${authUrl.toString()}`);
-    process.stdout.write(`[gmail:get_refresh_token] READY ${authUrl.toString()}\n`);
-    console.log('\nPlease open the following URL in a browser to authorize:');
-    console.log('\n' + authUrl.toString() + '\n');
-    // Only open here when running standalone (not spawned by tool.js which
-    // opens the browser itself after receiving READY).
-    if (!noOpen) {
-      try { openBrowser(authUrl.toString()); } catch (e) {}
-    }
-    console.log('If you are on a different machine, copy this URL into a browser there.');
-    console.log('After granting access the browser will redirect to the local callback and the terminal will display the refresh token.');
-  }
-
-  // Helper to create+listen and attach diagnostics
+  // Only listen on IPv4 for reliability
   function makeServer(host) {
     const s = http.createServer(handleRequest);
     s.on('error', (err) => {
@@ -227,8 +198,7 @@ async function main() {
     }
   }
 
-  // Attempt IPv6 (::1) then IPv4 (127.0.0.1).
-  makeServer('::1');
+  // Only listen on IPv4
   makeServer('127.0.0.1');
 
   // Safety net: if neither loopback bound, fall back to all interfaces.
