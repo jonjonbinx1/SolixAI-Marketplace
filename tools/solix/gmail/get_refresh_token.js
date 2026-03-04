@@ -124,9 +124,16 @@ async function main() {
 
   // ── MODE 2: interactive flow ──────────────────────────────────────────────
   console.log('Google OAuth2 Refresh Token Helper — interactive mode');
-  if (presetClientId) console.log('(Using clientId from config — press Enter to accept)');
-  const clientId = (await question(`OAuth Client ID [${presetClientId ?? 'required'}]: `)) || presetClientId;
-  const clientSecret = (await question(`OAuth Client Secret [${presetClientId ? '****' : 'required'}]: `)) || presetClientSecret;
+  let clientId = presetClientId;
+  let clientSecret = presetClientSecret;
+  // if both credentials are already known (from args or config) we can
+  // skip prompting entirely; this is important when the helper is spawned
+  // programmatically with stdin detached.
+  if (!clientId || !clientSecret) {
+    if (presetClientId) console.log('(Using clientId from config — press Enter to accept)');
+    clientId = (await question(`OAuth Client ID [${presetClientId ?? 'required'}]: `)) || presetClientId;
+    clientSecret = (await question(`OAuth Client Secret [${presetClientId ? '****' : 'required'}]: `)) || presetClientSecret;
+  }
 
   if (!clientId || !clientSecret) {
     console.error('clientId and clientSecret are required.');
