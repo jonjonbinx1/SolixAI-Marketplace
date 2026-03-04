@@ -807,8 +807,7 @@ import { shell } from 'electron';
             if (m) {
               helperReady = true;
               clearTimeout(timer);
-              // update the authUrl we'll open to match the helper's URI
-              authUrl = m[1];
+              // Do not overwrite authUrl; retain the original Google OAuth URL
               resolve(true);
             } else if (/READY/.test(chunk)) {
               helperReady = true;
