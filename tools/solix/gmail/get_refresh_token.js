@@ -195,7 +195,7 @@ async function main() {
   function onFirstListen() {
     if (readyEmitted) return;
     readyEmitted = true;
-    // Emit the Google OAuth consent URL instead of the local callback URL
+    console.log(`[DEBUG] onFirstListen called, emitting READY with authUrl: ${authUrl.toString()}`);
     process.stdout.write(`[gmail:get_refresh_token] READY ${authUrl.toString()}\n`);
     console.log('\nPlease open the following URL in a browser to authorize:');
     console.log('\n' + authUrl.toString() + '\n');
@@ -245,6 +245,13 @@ async function main() {
       s.listen(port);
     }
   }, 500);
+
+  // Prevent exit until callback is received
+  process.on('SIGINT', () => {
+    console.log('[gmail:get_refresh_token] Received SIGINT, shutting down servers.');
+    servers.forEach((s) => { try { s.close(); } catch {} });
+    process.exit(0);
+  });
 }
 
 main().catch((e) => {
