@@ -147,6 +147,15 @@ async function main() {
     console.log('\nOpening browser... if nothing opens, paste this URL manually:');
     console.log('\n' + authUrl.toString() + '\n');
 
+    // when running as a detached subprocess (no TTY) the browser should
+    // already have been opened by the parent.  Trying to open it again from
+    // here often fails because the environment is minimal.  Detect a missing
+    // terminal and skip the open logic in that case.
+    if (!process.stdout.isTTY || !process.stdin.isTTY) {
+      console.log('[helper] no TTY detected; skipping internal browser open');
+      return;
+    }
+
     // try the popular "open" package first; this works even when run as a
     // subprocess of an Electron renderer because it uses the OS defaults.
     // fall back to manual spawn of platform-specific command if the module is
