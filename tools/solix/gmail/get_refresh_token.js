@@ -108,6 +108,42 @@ async function main() {
   const scopes = getArg('scopes') ?? solixCfg.scopes ??
     'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send';
 
+  // ── MODE 1: code already in hand ─────────────────────────────────────────
+  if (existingCode) {
+    const clientId = presetClientId;
+    const clientSecret = presetClientSecret;
+    if (!clientId || !clientSecret) {
+      console.error('Could not find clientId/clientSecret in ~/.solix/config.json.');
+      console.error('Pass them explicitly: --clientId ID --clientSecret SECRET');
+      process.exit(1);
+    }
+    console.log('Google OAuth2 Refresh Token Helper — code exchange mode');
+    console.log('Using clientId from config:', clientId.slice(0, 20) + '...');
+    console.log('Exchanging code for tokens...');
+    await exchangeCode({ clientId, clientSecret, code: existingCode, redirectUri });
+    rl.close();
+    return;
+  }
+
+  // ── MODE 2: interactive flow ──────────────────────────────────────────────
+  console.log('Google OAuth2 Refresh Token Helper — interactive mode');
+  let clientId = presetClientId;
+  let clientSecret = presetClientSecret;
+  // if both credentials are already known (from args or config) we can
+  // skip prompting entirely; this is important when the helper is spawned
+  // programmatically with stdin detached.
+  if (!clientId || !clientSecret) {
+    if (presetClientId) console.log('(Using clientId from config — press Enter to accept)');
+    clientId = (await question(`OAuth Client ID [${presetClientId ?? 'required'}]: `)) || presetClientId;
+    clientSecret = (await question(`OAuth Client Secret [${presetClientId ? '****' : 'required'}]: `)) || presetClientSecret;
+  }
+
+  if (!clientId || !clientSecret) {
+    console.error('clientId and clientSecret are required.');
+    process.exit(1);
+  }
+
+  // Build auth URL using 127.0.0.1 so the callback lands on the correct listener
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);

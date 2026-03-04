@@ -682,7 +682,7 @@ import { shell } from 'electron';
     // Build consent URL that the user will need to visit.
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', clientId);
-    url.searchParams.set('redirect_uri', `http://localhost:${port}/oauth2callback`);
+    url.searchParams.set('redirect_uri', `http://127.0.0.1:${port}/oauth2callback`);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', scopes);
     url.searchParams.set('access_type', 'offline');
