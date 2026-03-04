@@ -14,7 +14,6 @@
  */
 
 import http from 'node:http';
-import { exec } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -24,8 +23,6 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 function question(q) {
   return new Promise((res) => {
     rl.question(q, (a) => res(a.trim()));
-    // `rl.question` doesn't return the interface, so attach listener separately
-    rl.on('close', () => res(''));
   });
 }
 
@@ -144,35 +141,10 @@ async function main() {
 
   server.listen(port, () => {
     console.log(`Listening on ${redirectUri}`);
-    console.log('\nOpening browser... if nothing opens, paste this URL manually:');
+    console.log('\nPlease open the following URL in a browser to authorize:');
     console.log('\n' + authUrl.toString() + '\n');
-
-    // always try to open the consent URL; the parent process (Electron UI)
-    // already calls shell.openExternal, but re‑opening here is harmless and
-    // ensures standalone CLI invocation works too.
-    (async () => {
-      try {
-        const openPkg = await import('open');
-        await openPkg.default(authUrl.toString());
-        return;
-      } catch (e) {
-        // ignore and fall back
-      }
-
-      // fallback: spawn the appropriate command directly
-      let child;
-      if (process.platform === 'win32') {
-        child = spawn('cmd', ['/c', 'start', '""', authUrl.toString()], {
-          detached: true,
-          stdio: 'ignore',
-        });
-      } else if (process.platform === 'darwin') {
-        child = spawn('open', [authUrl.toString()], { detached: true, stdio: 'ignore' });
-      } else {
-        child = spawn('xdg-open', [authUrl.toString()], { detached: true, stdio: 'ignore' });
-      }
-      if (child) child.unref();
-    })();
+    console.log('If you are on a different machine, copy this URL into a browser there.');
+    console.log('After granting access the browser will redirect to the local callback and the terminal will display the refresh token.');
   });
 }
 
