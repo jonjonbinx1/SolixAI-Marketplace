@@ -161,8 +161,21 @@ async function main() {
     rl.close();
   });
 
-  server.listen(port, () => {
+  server.on('error', (err) => {
+    console.error('[gmail:get_refresh_token] Server error:', err);
+    process.exit(1);
+  });
+
+  // Bind explicitly to the loopback interface to ensure the browser can
+  // reach the local callback endpoint regardless of how `localhost` resolves.
+  server.listen(port, '127.0.0.1', () => {
     console.log(`Listening on ${redirectUri}`);
+    const addr = server.address();
+    try {
+      console.log('[gmail:get_refresh_token] server.address():', JSON.stringify(addr));
+    } catch (e) {
+      console.log('[gmail:get_refresh_token] server listening');
+    }
     console.log('\nPlease open the following URL in a browser to authorize:');
     console.log('\n' + authUrl.toString() + '\n');
     // attempt to open the user's browser automatically; if this fails
