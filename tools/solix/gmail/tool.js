@@ -340,7 +340,15 @@ const toolImpl = {
               } catch {
                 criteria = { text: input.query };
               }
-              const uids = await client.search(criteria, { uid: true });
+              const raw = await client.search(criteria, { uid: true });
+              // Normalize
+              let uids = [];
+              if (Array.isArray(raw)) uids = raw;
+              else if (raw instanceof Set) uids = [...raw];
+              else if (raw) uids = [raw]; // single UID case
+
+              uids = uids.map(Number);
+
               const limited = uids.slice(-maxResults).reverse();
               const messages = [];
               if (limited.length > 0) {
