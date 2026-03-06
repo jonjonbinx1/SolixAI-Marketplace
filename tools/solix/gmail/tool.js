@@ -370,26 +370,42 @@ const toolImpl = {
 
         case "getMessage": {
           assertAllowed(cfg, "read");
-          if (!input.uid) throw new Error("uid is required.");
           const mailbox = input.mailbox ?? defaultMailbox;
+          // Accept either a single `uid` or an array `uids` for batch reads
+          const uids = input.uids
+            ? (Array.isArray(input.uids) ? input.uids.map(Number) : [Number(input.uids)])
+            : (input.uid ? [Number(input.uid)] : []);
+          if (!uids || uids.length === 0) throw new Error("uid or uids is required.");
+
           return await withImap(cfg, async (client) => {
             const lock = await client.getMailboxLock(mailbox);
             try {
-              for await (const msg of client.fetch(
-                { uid: input.uid },
-                { uid: true, flags: true, envelope: true, source: true },
-                { uid: true }
-              )) {
-                const parsed = await parseMessage(msg.source);
-                return {
-                  ok:      true,
-                  uid:     msg.uid,
-                  flags:   [...(msg.flags ?? [])],
-                  seen:    msg.flags?.has('\\Seen') ?? false,
-                  ...parsed,
-                };
+              const messages = [];
+              const chunkSize = Number(input.chunkSize ?? 50) || 50;
+              for (let i = 0; i < uids.length; i += chunkSize) {
+                const chunk = uids.slice(i, i + chunkSize);
+                for await (const msg of client.fetch(
+                  { uid: chunk },
+                  { uid: true, flags: true, envelope: true, source: true },
+                  { uid: true }
+                )) {
+                  const parsed = await parseMessage(msg.source);
+                  messages.push({
+                    uid:   msg.uid,
+                    flags: [...(msg.flags ?? [])],
+                    seen:  msg.flags?.has('\\Seen') ?? false,
+                    ...parsed,
+                  });
+                }
               }
-              throw new Error(`Message UID ${input.uid} not found in ${mailbox}.`);
+
+              if (messages.length === 0) {
+                throw new Error(`Message UID(s) ${uids.join(', ')} not found in ${mailbox}.`);
+              }
+
+              // Preserve single-message return shape for backwards compatibility
+              if (messages.length === 1) return { ok: true, ...messages[0] };
+              return { ok: true, mailbox, total: uids.length, messages };
             } finally {
               lock.release();
             }
@@ -560,15 +576,45 @@ const toolImpl = {
 
         case "moveMessage": {
           assertAllowed(cfg, "move");
-          if (!input.uid || !input.destMailbox) {
-            throw new Error("uid and destMailbox are required.");
+          // Accept single `uid` or array `uids` for batch moves
+          const uids = input.uids
+            ? (Array.isArray(input.uids) ? input.uids.map(Number) : [Number(input.uids)])
+            : (input.uid ? [Number(input.uid)] : []);
+          if (!uids || uids.length === 0 || !input.destMailbox) {
+            throw new Error("uid(s) and destMailbox are required.");
           }
           const srcMailbox = input.mailbox ?? defaultMailbox;
+          const chunkSize = Number(input.chunkSize ?? 100) || 100;
+          const dryRun = Boolean(input.dryRun);
+
           return await withImap(cfg, async (client) => {
             const lock = await client.getMailboxLock(srcMailbox);
             try {
-              await client.messageMove({ uid: input.uid }, input.destMailbox, { uid: true });
-              return { ok: true, uid: input.uid, from: srcMailbox, to: input.destMailbox };
+              if (dryRun) {
+                return { ok: true, preview: true, from: srcMailbox, to: input.destMailbox, requested: uids.length, uids };
+              }
+
+              const moved = [];
+              const failed = [];
+              for (let i = 0; i < uids.length; i += chunkSize) {
+                const chunk = uids.slice(i, i + chunkSize);
+                try {
+                  await client.messageMove({ uid: chunk }, input.destMailbox, { uid: true });
+                  moved.push(...chunk);
+                } catch (err) {
+                  failed.push({ uids: chunk, error: err?.message ?? String(err) });
+                }
+              }
+
+              return {
+                ok: true,
+                from: srcMailbox,
+                to: input.destMailbox,
+                requested: uids.length,
+                moved: moved.length,
+                movedUids: moved,
+                failed,
+              };
             } finally {
               lock.release();
             }
@@ -717,7 +763,20 @@ export const spec = {
       },
       uid: {
         type: "number",
-        description: "IMAP UID of the target message. Required for getMessage, replyMessage, moveMessage, deleteMessage.",
+        description: "IMAP UID of the target message. For single-message calls provide `uid`; for batch operations supply `uids`.",
+      },
+      uids: {
+        type: "array",
+        items: { type: "number" },
+        description: "Array of IMAP UIDs for batch operations (e.g. move or get).",
+      },
+      chunkSize: {
+        type: "number",
+        description: "Optional chunk size for batch operations (defaults: getMessage=50, moveMessage=100).",
+      },
+      dryRun: {
+        type: "boolean",
+        description: "When true, perform a preview without making changes (supported by moveMessage).",
       },
       destMailbox: {
         type: "string",
@@ -791,6 +850,12 @@ export const spec = {
 
       // moveMessage / deleteMessage
       action: { type: "string" },
+      // Batch/move metadata
+      requested: { type: "number" },
+      moved: { type: "number" },
+      movedUids: { type: "array", items: { type: "number" } },
+      failed: { type: "array", items: { type: "object" } },
+      preview: { type: "boolean" },
 
       // createTemplate / listTemplates
       name:      { type: "string" },
