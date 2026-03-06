@@ -264,14 +264,14 @@ const toolImpl = {
 
     // â”€â”€ Behaviour â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     {
-      key: "maxResults",
-      label: "Max Messages per Request",
+      key: "limit",
+      label: "Messages per Request",
       type: "number",
       default: 20,
       min: 1,
       max: 200,
       step: 5,
-      description: "Maximum number of messages returned by list and search actions.",
+      description: "Default number of messages returned by list and search actions (per-page).",
     },
     {
       key: "defaultMailbox",
@@ -326,8 +326,9 @@ const toolImpl = {
     }
 
     const { action } = input;
-    // Allow per-call override of max results via input.maxResults, falling back to tool config.
-    const maxResults = Number(input.maxResults ?? cfg.maxResults ?? 20) || 20;
+    // Default per-request page size (config key `limit`). Cap at 200.
+    const maxLimit = 200;
+    const defaultLimit = Math.min(Number(cfg.limit ?? 20) || 20, maxLimit);
     const defaultMailbox = cfg.defaultMailbox ?? 'INBOX';
 
     try {
@@ -338,6 +339,7 @@ const toolImpl = {
         case "listMessages": {
           assertAllowed(cfg, "read");
           const mailbox = input.mailbox ?? defaultMailbox;
+          const limit = Math.min(Number(input.limit ?? defaultLimit) || defaultLimit, maxLimit);
           return await withImap(cfg, async (client) => {
             const lock = await client.getMailboxLock(mailbox);
             try {
@@ -345,7 +347,7 @@ const toolImpl = {
               // Fetch the most recent N messages by sequence range
               const total = client.mailbox.exists ?? 0;
               if (total === 0) return { ok: true, total: 0, messages: [] };
-              const from = Math.max(1, total - maxResults + 1);
+              const from = Math.max(1, total - limit + 1);
               for await (const msg of client.fetch(`${from}:${total}`, {
                 uid: true, flags: true, envelope: true, bodyStructure: false,
               })) {
@@ -418,6 +420,14 @@ const toolImpl = {
           assertAllowed(cfg, "search");
           if (!input.query) throw new Error("query is required.");
           const mailbox = input.mailbox ?? defaultMailbox;
+
+          // Paging params: page (1-based), limit (per-page). Default limit falls
+          // back to the tool config `limit`. Cap limit to avoid very large pages.
+          const page = Math.max(1, Number(input.page ?? 1) || 1);
+          let limit = Number(input.limit ?? defaultLimit) || defaultLimit;
+          if (limit > maxLimit) limit = maxLimit;
+          const order = input.order === 'oldest' ? 'oldest' : 'newest';
+
           return await withImap(cfg, async (client) => {
             const lock = await client.getMailboxLock(mailbox);
             try {
@@ -431,23 +441,40 @@ const toolImpl = {
                 // If the criteria was rejected (e.g. X-GM-RAW not supported), fetch all.
                 raw = await client.search({ all: true }, { uid: true });
               }
+
               // Normalize — imapflow can return an array, Set, single number, or null
               let uids = [];
               if (Array.isArray(raw)) uids = raw;
               else if (raw instanceof Set) uids = [...raw];
               else if (raw) uids = [raw];
 
-              uids = uids.map(Number);
+              uids = uids.map(Number).filter((n) => !Number.isNaN(n));
 
-              const limited = uids.slice(-maxResults).reverse();
+              const total = uids.length;
+              if (total === 0) {
+                return { ok: true, query: input.query, mailbox, total: 0, page, pages: 0, limit, hasNext: false, hasPrev: false, order, messages: [] };
+              }
+
+              // Sort UIDs according to requested order (newest-first or oldest-first)
+              uids.sort((a, b) => a - b);
+              if (order === 'newest') uids.reverse();
+
+              const pages = Math.ceil(total / limit) || 0;
+              if (page > pages && pages > 0) {
+                return { ok: true, query: input.query, mailbox, total, page, pages, limit, hasNext: false, hasPrev: page > 1, order, messages: [] };
+              }
+
+              const start = (page - 1) * limit;
+              const slice = uids.slice(start, start + limit);
               const messages = [];
-              if (limited.length > 0) {
+              if (slice.length > 0) {
+                const fetched = [];
                 for await (const msg of client.fetch(
-                  { uid: limited },
+                  { uid: slice },
                   { uid: true, flags: true, envelope: true },
                   { uid: true }
                 )) {
-                  messages.push({
+                  fetched.push({
                     uid:     msg.uid,
                     from:    msg.envelope.from?.[0]?.address ?? '',
                     subject: msg.envelope.subject ?? '',
@@ -455,8 +482,18 @@ const toolImpl = {
                     seen:    msg.flags?.has('\\Seen') ?? false,
                   });
                 }
+                // Preserve requested order
+                const byUid = new Map(fetched.map((m) => [m.uid, m]));
+                for (const uid of slice) {
+                  const m = byUid.get(uid);
+                  if (m) messages.push(m);
+                }
               }
-              return { ok: true, query: input.query, mailbox, total: uids.length, messages };
+
+              const hasPrev = page > 1;
+              const hasNext = page < pages;
+
+              return { ok: true, query: input.query, mailbox, total, page, pages, limit, hasNext, hasPrev, order, messages };
             } finally {
               lock.release();
             }
@@ -786,14 +823,25 @@ export const spec = {
       // â”€â”€ search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       query: {
         type: "string",
-        description: "Gmail-style search query (e.g. 'from:alice is:unread') used by searchMessages. Gmail IMAP supports X-GM-RAW extension. Use the optional `maxResults` input to override the tool's per-request limit.",
+        description: "Gmail-style search query (e.g. 'from:alice is:unread') used by searchMessages. Gmail IMAP supports X-GM-RAW extension. Use the optional `limit` input to override the tool's per-request limit.",
       },
 
-      // Per-call override for max results (1-200). If omitted, tool config `maxResults` is used.
-      maxResults: {
+      page: {
         type: "number",
-        description: "Optional per-request override for the maximum number of messages to return (overrides tool config `maxResults`).",
+        description: "1-based page number for paged search (default: 1).",
       },
+      limit: {
+        type: "number",
+        description: "Number of messages per page for paged search. Overrides the tool's configured `limit` when provided. Capped at 200.",
+      },
+      order: {
+        type: "string",
+        enum: ["newest", "oldest"],
+        description: "Sort order for search results: 'newest' (default) or 'oldest'.",
+      },
+
+      // Per-call override for page size (1-200). If omitted, tool config `limit` is used.
+      // Use `limit` as the per-request/page size.
 
       // â”€â”€ compose fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       to: {
@@ -830,6 +878,12 @@ export const spec = {
       total:    { type: "number" },
       messages: { type: "array", items: { type: "object" } },
       mailbox:  { type: "string" },
+      page:     { type: "number" },
+      pages:    { type: "number" },
+      limit:    { type: "number" },
+      hasNext:  { type: "boolean" },
+      hasPrev:  { type: "boolean" },
+      order:    { type: "string" },
 
       // getMessage
       uid:      { type: "number" },
