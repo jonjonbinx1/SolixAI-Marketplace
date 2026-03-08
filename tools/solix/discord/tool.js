@@ -83,9 +83,15 @@ async function ensureBridge(context = {}) {
 }
 
 async function sendViaBridge(bridge, channelId, content, options = {}) {
-  if (typeof bridge.sendDiscordMessage === 'function') return await bridge.sendDiscordMessage(channelId, content, options);
-  if (typeof bridge.sendMessage === 'function') return await bridge.sendMessage(channelId, { content, ...options });
-  if (typeof bridge.send === 'function') return await bridge.send(channelId, content, options);
+  if (typeof bridge.sendDiscordMessage === 'function') {
+    return await bridge.sendDiscordMessage(channelId, content, options);
+  }
+  if (typeof bridge.sendMessage === 'function') {
+    return await bridge.sendMessage(channelId, content, options);
+  }
+  if (typeof bridge.send === 'function') {
+    return await bridge.send(channelId, content, options);
+  }
   throw new Error('Bridge does not expose a send function.');
 }
 
