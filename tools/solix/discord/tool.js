@@ -103,17 +103,44 @@ async function resolveChannelId(bridgeOrCore, candidate) {
     }
   }
 
-  // Fallback: check global bridge's channelAgentMap (key might be name or id)
-  const cam = inst?.channelAgentMap;
-  if (cam && typeof cam.entries === 'function') {
-    for (const [k] of inst.channelAgentMap.entries()) {
-      try {
-        if (String(k).toLowerCase().replace(/^#/, '') === name) {
-          if (/^\d+$/.test(k)) return String(k);
+  // Fallback: check a channelAgentMap or similar mapping on the bridge/core.
+  // Keys may be IDs or names; values may contain IDs as properties.
+  try {
+    const cam = inst?.channelAgentMap ?? inst?.channelMap ?? inst?.channelsMap;
+    if (cam) {
+      // If it's a Map-like
+      if (typeof cam.entries === 'function') {
+        for (const [k, v] of cam.entries()) {
+          try {
+            const keyStr = String(k ?? '').toLowerCase().replace(/^#/, '');
+            if (keyStr === name) {
+              if (/^\d+$/.test(String(k))) return String(k);
+              if (v && (v.id || v.channelId || v.channel?.id)) {
+                return String(v.id ?? v.channelId ?? v.channel.id);
+              }
+            }
+          } catch (_) {
+            continue;
+          }
         }
-      } catch (_) {}
+      } else if (typeof cam === 'object') {
+        // Plain object mapping
+        for (const [k, v] of Object.entries(cam)) {
+          try {
+            const keyStr = String(k ?? '').toLowerCase().replace(/^#/, '');
+            if (keyStr === name) {
+              if (/^\d+$/.test(k)) return String(k);
+              if (v && (v.id || v.channelId || v.channel?.id)) {
+                return String(v.id ?? v.channelId ?? v.channel.id);
+              }
+            }
+          } catch (_) {
+            continue;
+          }
+        }
+      }
     }
-  }
+  } catch (_) {}
 
   return null;
 }
