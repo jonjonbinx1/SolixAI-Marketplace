@@ -70,6 +70,54 @@ async function fetchViaBridge(bridge, channelId, opts = {}) {
   throw new Error('Bridge does not expose a fetch function.');
 }
 
+// helper: return snowflake string or null
+async function resolveChannelId(bridgeOrCore, candidate) {
+  if (!candidate) return null;
+  // strip mention like <#123456> or <@!123>
+  const m = String(candidate).match(/^<#!?(\d+)>$/);
+  if (m) return m[1];
+  if (/^\d+$/.test(candidate)) return candidate; // already an ID
+
+  const name = String(candidate).replace(/^#/, '').toLowerCase();
+
+  // If ensureBridge returned a core module, try to get the live bridge instance
+  let inst = bridgeOrCore;
+  if (!inst?.client && typeof bridgeOrCore?.getGlobalBridge === 'function') {
+    try {
+      inst = await bridgeOrCore.getGlobalBridge();
+    } catch (_) {}
+  }
+
+  const client = inst?.client;
+  if (client?.channels?.cache) {
+    // cached lookup
+    const found = client.channels.cache.find((c) => (c.name && c.name.toLowerCase() === name));
+    if (found) return String(found.id);
+    // try fetching channels from guilds (may be necessary if not cached)
+    for (const g of client.guilds.cache.values()) {
+      try {
+        const channels = await g.channels.fetch();
+        const f = channels.find((c) => (c.name && c.name.toLowerCase() === name));
+        if (f) return String(f.id);
+      } catch (_) {}
+    }
+  }
+
+  // Fallback: check global bridge's channelAgentMap (key might be name or id)
+  const cam = inst?.channelAgentMap;
+  if (cam && typeof cam.entries === 'function') {
+    for (const [k] of inst.channelAgentMap.entries()) {
+      try {
+        if (String(k).toLowerCase().replace(/^#/, '') === name) {
+          if (/^\d+$/.test(k)) return String(k);
+        }
+      } catch (_) {}
+    }
+  }
+
+  return null;
+}
+
 const toolImpl = {
   name: 'discord',
   version: '1.0.0',
@@ -121,24 +169,38 @@ const toolImpl = {
 
         case 'sendMessage': {
           assertAllowed(cfg, 'send');
-          const channelId = input.channelId ?? cfg.defaultChannel;
-          if (!channelId) throw new Error('channelId is required');
-          if (!input.content) throw new Error('content is required');
           const bridge = await ensureBridge();
+
+          // Accept a channel name (`channel`) or an ID (`channelId`). Prefer `channel` (UI friendly).
+          let channelCandidate = input.channel ?? input.channelId ?? cfg.defaultChannel ?? '';
+          if (channelCandidate && !/^\d+$/.test(String(channelCandidate))) {
+            const resolved = await resolveChannelId(bridge, channelCandidate);
+            if (resolved) channelCandidate = resolved;
+          }
+
+          if (!channelCandidate) throw new Error('channelId is required');
+          if (!input.content) throw new Error('content is required');
+
           const options = { ...(input.options ?? {}) };
           if (input.replyToId) options.replyToId = input.replyToId;
-          const res = await sendViaBridge(bridge, channelId, input.content, options);
+          const res = await sendViaBridge(bridge, channelCandidate, input.content, options);
           const messageId = res?.id ?? res?.messageId ?? null;
           return { ok: true, messageId, response: res };
         }
 
         case 'readMessages': {
           assertAllowed(cfg, 'read');
-          const channelId = input.channelId ?? cfg.defaultChannel;
-          if (!channelId) throw new Error('channelId is required');
           const bridge = await ensureBridge();
+
+          let channelCandidate = input.channel ?? input.channelId ?? cfg.defaultChannel ?? '';
+          if (channelCandidate && !/^\d+$/.test(String(channelCandidate))) {
+            const resolved = await resolveChannelId(bridge, channelCandidate);
+            if (resolved) channelCandidate = resolved;
+          }
+          if (!channelCandidate) throw new Error('channelId is required');
+
           const opts = { limit: input.limit ?? 50, before: input.before, after: input.after };
-          const raw = await fetchViaBridge(bridge, channelId, opts);
+          const raw = await fetchViaBridge(bridge, channelCandidate, opts);
           const items = Array.isArray(raw) ? raw : (raw?.messages ?? []);
           const messages = items.map((m) => ({
             id: m.id ?? m.messageId ?? null,
@@ -147,7 +209,7 @@ const toolImpl = {
             timestamp: m.timestamp ?? m.ts ?? m.createdAt ?? null,
             raw: m,
           }));
-          return { ok: true, channelId, total: messages.length, messages };
+          return { ok: true, channelId: channelCandidate, total: messages.length, messages };
         }
 
         default:
@@ -167,6 +229,7 @@ export const spec = {
     required: ['action'],
     properties: {
       action: { type: 'string', enum: ['sendMessage', 'readMessages', 'getConfig'] },
+      channel: { type: 'string' },
       channelId: { type: 'string' },
       content: { type: 'string' },
       replyToId: { type: 'string' },
