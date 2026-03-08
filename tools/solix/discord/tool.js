@@ -231,7 +231,7 @@ const toolImpl = {
 
         case 'sendMessage': {
           assertAllowed(cfg, 'send');
-          const bridge = await ensureBridge();
+          const bridge = await ensureBridge(context);
 
           // Accept a channel name (`channel`) or an ID (`channelId`). Prefer `channel` (UI friendly).
           let channelCandidate = input.channel ?? input.channelId ?? cfg.defaultChannel ?? '';
@@ -252,7 +252,7 @@ const toolImpl = {
 
         case 'readMessages': {
           assertAllowed(cfg, 'read');
-          const bridge = await ensureBridge();
+          const bridge = await ensureBridge(context);
 
           let channelCandidate = input.channel ?? input.channelId ?? cfg.defaultChannel ?? '';
           if (channelCandidate && !/^\d+$/.test(String(channelCandidate))) {
