@@ -171,7 +171,18 @@ class RestDiscordBridge {
   }
 
   async sendDiscordMessage(channelId, content, options = {}) {
-    const path = `/channels/${channelId}/messages`;
+    // Allow passing a human-friendly channel name; resolve to ID when needed.
+    let target = String(channelId ?? '');
+    if (!/^\d+$/.test(target)) {
+      try {
+        const resolved = await this.resolveChannelByName(target);
+        if (resolved) target = resolved;
+        else throw new Error(`Could not resolve channel "${target}" to an ID`);
+      } catch (e) {
+        throw new Error(`Could not resolve channel "${target}" to an ID`);
+      }
+    }
+    const path = `/channels/${target}/messages`;
     let payload = {};
 
     // Allow passing a full payload object as `content` when options are empty/null
@@ -224,30 +235,71 @@ class RestDiscordBridge {
   send(channelId, content, options) { return this.sendDiscordMessage(channelId, content, options); }
 
   async fetchDiscordMessages(channelId, opts = {}) {
+    // Resolve human-friendly channel names to numeric IDs when necessary
+    let target = String(channelId ?? '');
+    if (!/^\d+$/.test(target)) {
+      try {
+        const resolved = await this.resolveChannelByName(target);
+        if (resolved) target = resolved;
+        else throw new Error(`Could not resolve channel "${target}" to an ID`);
+      } catch (e) {
+        throw new Error(`Could not resolve channel "${target}" to an ID`);
+      }
+    }
+
     const params = [];
     if (opts.limit) params.push(`limit=${encodeURIComponent(String(opts.limit))}`);
     if (opts.before) params.push(`before=${encodeURIComponent(String(opts.before))}`);
     if (opts.after) params.push(`after=${encodeURIComponent(String(opts.after))}`);
     const qs = params.length ? `?${params.join('&')}` : '';
-    const path = `/channels/${channelId}/messages${qs}`;
+    const path = `/channels/${target}/messages${qs}`;
     return await this._fetch(path, { method: 'GET' });
   }
   fetchMessages(channelId, opts) { return this.fetchDiscordMessages(channelId, opts); }
   getMessages(channelId, opts) { return this.fetchDiscordMessages(channelId, opts); }
 
   async resolveChannelByName(name) {
-    if (!this.guildId) return null;
+    if (!name) return null;
+    const normalize = (s) => String(s ?? '').toLowerCase().replace(/^#/, '').replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
+    const want = normalize(name);
+
     try {
-      const path = `/guilds/${this.guildId}/channels`;
-      const channels = await this._fetch(path, { method: 'GET' });
-      const target = String(name).replace(/^#/, '').toLowerCase();
-      for (const c of channels) {
-        if (c && c.name && String(c.name).toLowerCase() === target) return String(c.id);
+      const guildIds = this.guildId ? [this.guildId] : null;
+
+      // If a guildId is configured, search there first for a faster, scoped lookup.
+      if (guildIds) {
+        try {
+          const path = `/guilds/${this.guildId}/channels`;
+          const channels = await this._fetch(path, { method: 'GET' });
+          for (const c of channels) {
+            try {
+              if (normalize(c.name) === want) return String(c.id);
+            } catch (_) {}
+          }
+        } catch (_) {}
+        return null;
       }
-      return null;
-    } catch (e) {
-      return null;
-    }
+
+      // No configured guild: enumerate guilds the bot is in and search each.
+      try {
+        const guilds = await this._fetch('/users/@me/guilds', { method: 'GET' });
+        if (!Array.isArray(guilds)) return null;
+        for (const g of guilds) {
+          if (!g || !g.id) continue;
+          try {
+            const channels = await this._fetch(`/guilds/${g.id}/channels`, { method: 'GET' });
+            for (const c of channels) {
+              try {
+                if (normalize(c.name) === want) return String(c.id);
+              } catch (_) {}
+            }
+          } catch (_) {
+            continue;
+          }
+        }
+      } catch (_) {}
+    } catch (_) {}
+    return null;
   }
 }
 
