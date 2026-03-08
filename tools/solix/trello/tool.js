@@ -189,6 +189,20 @@ const toolImpl = {
 
   config: [
     {
+      key: 'apiKey',
+      label: 'API Key',
+      type: 'string',
+      placeholder: 'Trello API key',
+      description: 'Your Trello API key (can also be provided in ~/.solix/config.json or via env var TRELLO_API_KEY).',
+    },
+    {
+      key: 'token',
+      label: 'Token',
+      type: 'secret',
+      placeholder: 'Trello token',
+      description: 'Trello API token (keep this private). Can also be provided in ~/.solix/config.json or via env var TRELLO_TOKEN.',
+    },
+    {
       key: 'allowedOperations',
       label: 'Allowed Operations',
       type: 'multiselect',
@@ -224,7 +238,14 @@ const toolImpl = {
     if (ctx.toolConfig && typeof ctx.toolConfig === 'object') candidates.push(ctx.toolConfig);
 
     const uiCfg = Object.assign({}, ...candidates);
+
+    // Merge: file config as baseline; UI config on top.
+    // Do not allow empty UI strings to overwrite stored credentials.
+    const pick = (val, fallback) => (typeof val === 'string' && val.trim() !== '') ? val : fallback;
     const cfg = { ...fileCfg, ...uiCfg };
+    cfg.apiKey = pick(uiCfg.apiKey, fileCfg.apiKey);
+    cfg.token = pick(uiCfg.token, fileCfg.token);
+    if (cfg.token && typeof cfg.token === 'string') cfg.token = cfg.token.replace(/\s+/g, '');
     cfg.defaultBoard = cfg.defaultBoard ?? '';
     cfg.defaultList = cfg.defaultList ?? '';
 

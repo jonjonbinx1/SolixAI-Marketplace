@@ -41,6 +41,8 @@ Alternatively set environment variables `TRELLO_API_KEY` and `TRELLO_TOKEN`, or 
 const context = { toolConfig: { 'solix/trello': { apiKey: '...', token: '...' } } };
 ```
 
+The Trello tool's settings UI also exposes `API Key` and `Token` fields so you can paste credentials directly into the tool configuration.
+
 ## Usage
 
 Import the tool and call `run({ input, context })`. Example (ESM):
