@@ -346,7 +346,11 @@ const toolImpl = {
               const messages = [];
               // Fetch the most recent N messages by sequence range
               const total = client.mailbox.exists ?? 0;
-              if (total === 0) return { ok: true, total: 0, messages: [] };
+              const pages = Math.ceil(total / limit) || 0;
+              const page = 1;
+              if (total === 0) {
+                return { ok: true, mailbox, total: 0, page, pages: 0, limit, hasNext: false, hasPrev: false, messages: [] };
+              }
               const from = Math.max(1, total - limit + 1);
               for await (const msg of client.fetch(`${from}:${total}`, {
                 uid: true, flags: true, envelope: true, bodyStructure: false,
@@ -361,7 +365,10 @@ const toolImpl = {
                   seen:    msg.flags?.has('\\Seen') ?? false,
                 });
               }
-              return { ok: true, mailbox, total, messages: messages.reverse() };
+              const ordered = messages.reverse();
+              const hasPrev = false;
+              const hasNext = page < pages;
+              return { ok: true, mailbox, total, page, pages, limit, hasNext, hasPrev, messages: ordered };
             } finally {
               lock.release();
             }
