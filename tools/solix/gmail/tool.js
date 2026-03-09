@@ -339,20 +339,32 @@ const toolImpl = {
         case "listMessages": {
           assertAllowed(cfg, "read");
           const mailbox = input.mailbox ?? defaultMailbox;
-          const limit = Math.min(Number(input.limit ?? defaultLimit) || defaultLimit, maxLimit);
+          const page = Math.max(1, Number(input.page ?? 1) || 1);
+          let limit = Number(input.limit ?? defaultLimit) || defaultLimit;
+          if (limit > maxLimit) limit = maxLimit;
+
           return await withImap(cfg, async (client) => {
             const lock = await client.getMailboxLock(mailbox);
             try {
               const messages = [];
-              // Fetch the most recent N messages by sequence range
+              // Total messages in mailbox (sequence numbers are 1..total)
               const total = client.mailbox.exists ?? 0;
               const pages = Math.ceil(total / limit) || 0;
-              const page = 1;
+
               if (total === 0) {
                 return { ok: true, mailbox, total: 0, page, pages: 0, limit, hasNext: false, hasPrev: false, messages: [] };
               }
-              const from = Math.max(1, total - limit + 1);
-              for await (const msg of client.fetch(`${from}:${total}`, {
+
+              if (page > pages && pages > 0) {
+                return { ok: true, mailbox, total, page, pages, limit, hasNext: false, hasPrev: page > 1, messages: [] };
+              }
+
+              // Calculate sequence range for the requested page (newest-first)
+              const endSeq = total - (page - 1) * limit;
+              const from = Math.max(1, endSeq - limit + 1);
+              const to = endSeq;
+
+              for await (const msg of client.fetch(`${from}:${to}`, {
                 uid: true, flags: true, envelope: true, bodyStructure: false,
               })) {
                 messages.push({
@@ -365,8 +377,10 @@ const toolImpl = {
                   seen:    msg.flags?.has('\\Seen') ?? false,
                 });
               }
+
+              // Preserve newest-first ordering
               const ordered = messages.reverse();
-              const hasPrev = false;
+              const hasPrev = page > 1;
               const hasNext = page < pages;
               return { ok: true, mailbox, total, page, pages, limit, hasNext, hasPrev, messages: ordered };
             } finally {
