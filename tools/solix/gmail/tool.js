@@ -381,7 +381,7 @@ const toolImpl = {
               // Preserve newest-first ordering
               const ordered = messages.reverse();
               const hasPrev = page > 1;
-              const hasNext = page < pages;
+              const hasNext = (page * limit) < total;
               return { ok: true, mailbox, total, page, pages, limit, hasNext, hasPrev, messages: ordered };
             } finally {
               lock.release();
